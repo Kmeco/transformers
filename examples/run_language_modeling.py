@@ -154,18 +154,33 @@ class OneByOneTextDataset(Dataset):
         logger.info("Creating features from dataset file at %s", file_path)
 
         with open(file_path, encoding="utf-8") as f:
-            lines = [line for line in f.read().split(split_token) if (len(line) > 0 and not line.isspace())]
+            lines = [line + split_token for line in f.read().split(split_token) if (len(line) > 0 and not line.isspace())]
         # add special tokens which shouldn't be split
         special_tokens_dict = {'cls_token': '<TLDR>', 'eos_token': '<EOD>', 'additional_special_tokens': ['<EOT>']}
         tokenizer.add_special_tokens(special_tokens_dict)
 
         self.examples = tokenizer.batch_encode_plus(lines, add_special_tokens=True, max_length=block_size)["input_ids"]
+        self.examples = [ex for ex in self.examples if tokenizer.encode('<TLDR>')[0] in ex]
+
+        self.labels = []
+        max_block = torch.arange(block_size)
+        for ex in self.examples:
+            # note that this will throw an exeption if token is not in the training example.
+            try:
+                idx = ex.index(tokenizer.encode('<TLDR>')[0])
+            except ValueError as e:
+                print("Example does not contain <TLDR> token.")
+                print(tokenizer.decode(ex))
+                exit()
+            mask = (max_block <= idx)[:len(ex)]
+            masked_labels = torch.tensor(ex) * ~mask - mask.type(torch.int) * 100  # ignore context when computing loss
+            self.labels.append(masked_labels)
 
     def __len__(self):
         return len(self.examples)
 
     def __getitem__(self, i):
-        return torch.tensor(self.examples[i], dtype=torch.long)
+        return torch.tensor(self.examples[i], dtype=torch.long), self.labels[i]
 
 
 def load_and_cache_examples(args, tokenizer, evaluate=False):
@@ -263,8 +278,11 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
 
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
 
-    def collate(examples: List[torch.Tensor]):
-        if tokenizer._pad_token is None:
+    def collate(examples: List[Tuple[torch.Tensor]]):
+        if args.one_by_one:
+            xs, ys = list(zip(*examples))
+            return pad_sequence(xs, batch_first=True), pad_sequence(ys, batch_first=True)
+        elif tokenizer._pad_token is None:
             return pad_sequence(examples, batch_first=True)
         return pad_sequence(examples, batch_first=True, padding_value=tokenizer.pad_token_id)
 
@@ -272,6 +290,13 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
     train_dataloader = DataLoader(
         train_dataset, sampler=train_sampler, batch_size=args.train_batch_size, collate_fn=collate
     )
+
+    # for batch in train_dataloader:
+    #     print(batch[0].shape)
+    #     ex, label = batch
+    #     print(ex)
+    #     print(label)
+    #     exit()
 
     if args.max_steps > 0:
         t_total = args.max_steps
@@ -358,8 +383,8 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
     model_to_resize = model.module if hasattr(model, "module") else model  # Take care of distributed/parallel training
     model_to_resize.resize_token_embeddings(len(tokenizer))
 
-    wandb.init("ucl-nlp-project", reinit=True)
-    wandb.watch(model)
+    # wandb.init("ucl-nlp-project", reinit=True)
+    # wandb.watch(model)
 
     model.zero_grad()
     train_iterator = trange(
@@ -375,7 +400,13 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
                 steps_trained_in_current_epoch -= 1
                 continue
 
-            inputs, labels = mask_tokens(batch, tokenizer, args) if args.mlm else (batch, batch)
+            if args.mlm:
+                inputs, labels = mask_tokens(batch, tokenizer, args)
+            elif args.one_by_one:
+                inputs, labels = batch
+            else:
+                inputs, labels = (batch, batch)
+
             model.resize_token_embeddings(len(tokenizer))
 
             # print(inputs)
@@ -389,10 +420,10 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
             outputs = model(inputs, masked_lm_labels=labels) if args.mlm else model(inputs, labels=labels)
 
             loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
-            wandb.log({"loss": loss})
-            # print(loss)
-            # exit()
+            # wandb.log({"loss": loss})
 
+            print(loss)
+            exit()
             if args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average on multi-gpu parallel training
             if args.gradient_accumulation_steps > 1:
