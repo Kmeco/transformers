@@ -425,8 +425,6 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
             if args.wandb:
                 wandb.log({"loss": loss})
 
-            print(loss)
-            exit()
             if args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average on multi-gpu parallel training
             if args.gradient_accumulation_steps > 1:
