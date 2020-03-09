@@ -19,7 +19,7 @@ GPT and GPT-2 are fine-tuned using a causal language modeling (CLM) loss while B
 using a masked language modeling (MLM) loss.
 """
 
-
+import wandb
 import argparse
 import glob
 import logging
@@ -358,6 +358,9 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
     model_to_resize = model.module if hasattr(model, "module") else model  # Take care of distributed/parallel training
     model_to_resize.resize_token_embeddings(len(tokenizer))
 
+    wandb.init("ucl-nlp-project", reinit=True)
+    wandb.watch(model)
+
     model.zero_grad()
     train_iterator = trange(
         epochs_trained, int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0]
@@ -384,7 +387,9 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
             labels = labels.to(args.device)
             model.train()
             outputs = model(inputs, masked_lm_labels=labels) if args.mlm else model(inputs, labels=labels)
+
             loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
+            wandb.log({"loss": loss})
             # print(loss)
             # exit()
 
