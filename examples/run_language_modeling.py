@@ -278,7 +278,7 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
 
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
 
-    def collate(examples: List[Tuple[torch.Tensor]]):
+    def collate(examples):
         if args.one_by_one:
             xs, ys = list(zip(*examples))
             return pad_sequence(xs, batch_first=True), pad_sequence(ys, batch_first=True)
@@ -410,11 +410,6 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
 
             model.resize_token_embeddings(len(tokenizer))
 
-            # print(inputs)
-            # print(inputs.shape)
-            # print("_"*100)
-            # print(labels)
-            # print(inputs.shape)
             inputs = inputs.to(args.device)
             labels = labels.to(args.device)
             model.train()
@@ -423,7 +418,7 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
             loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
 
             if args.wandb:
-                wandb.log({"loss": loss})
+                wandb.log({"train_loss": loss})
 
             if args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average on multi-gpu parallel training
@@ -504,8 +499,11 @@ def evaluate(args, model: PreTrainedModel, tokenizer: PreTrainedTokenizer, prefi
     args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
     # Note that DistributedSampler samples randomly
 
-    def collate(examples: List[torch.Tensor]):
-        if tokenizer._pad_token is None:
+    def collate(examples):
+        if args.one_by_one:
+            xs, ys = list(zip(*examples))
+            return pad_sequence(xs, batch_first=True), pad_sequence(ys, batch_first=True)
+        elif tokenizer._pad_token is None:
             return pad_sequence(examples, batch_first=True)
         return pad_sequence(examples, batch_first=True, padding_value=tokenizer.pad_token_id)
 
@@ -527,7 +525,14 @@ def evaluate(args, model: PreTrainedModel, tokenizer: PreTrainedTokenizer, prefi
     model.eval()
 
     for batch in tqdm(eval_dataloader, desc="Evaluating"):
-        inputs, labels = mask_tokens(batch, tokenizer, args) if args.mlm else (batch, batch)
+
+        if args.mlm:
+            inputs, labels = mask_tokens(batch, tokenizer, args)
+        elif args.one_by_one:
+            inputs, labels = batch
+        else:
+            inputs, labels = (batch, batch)
+
         inputs = inputs.to(args.device)
         labels = labels.to(args.device)
 
@@ -538,6 +543,10 @@ def evaluate(args, model: PreTrainedModel, tokenizer: PreTrainedTokenizer, prefi
         nb_eval_steps += 1
 
     eval_loss = eval_loss / nb_eval_steps
+
+    if args.wandb:
+        wandb.log({"eval_loss": eval_loss})
+
     perplexity = torch.exp(torch.tensor(eval_loss))
 
     result = {"perplexity": perplexity}
