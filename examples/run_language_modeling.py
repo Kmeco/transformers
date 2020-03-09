@@ -383,8 +383,9 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
     model_to_resize = model.module if hasattr(model, "module") else model  # Take care of distributed/parallel training
     model_to_resize.resize_token_embeddings(len(tokenizer))
 
-    # wandb.init("ucl-nlp-project", reinit=True)
-    # wandb.watch(model)
+    if args.wandb:
+        wandb.init(project="ucl-nlp-project", reinit=True)
+        wandb.watch(model)
 
     model.zero_grad()
     train_iterator = trange(
@@ -420,7 +421,9 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
             outputs = model(inputs, masked_lm_labels=labels) if args.mlm else model(inputs, labels=labels)
 
             loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
-            # wandb.log({"loss": loss})
+
+            if args.wandb:
+                wandb.log({"loss": loss})
 
             print(loss)
             exit()
@@ -696,6 +699,7 @@ def main():
     parser.add_argument("--local_rank", type=int, default=-1, help="For distributed training: local_rank")
     parser.add_argument("--server_ip", type=str, default="", help="For distant debugging.")
     parser.add_argument("--server_port", type=str, default="", help="For distant debugging.")
+    parser.add_argument("--wandb", action="store_true", help="Track data to wandb.")
     args = parser.parse_args()
 
     if args.model_type in ["bert", "roberta", "distilbert", "camembert"] and not args.mlm:
