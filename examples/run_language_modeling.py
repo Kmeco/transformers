@@ -104,9 +104,10 @@ class TextDataset(Dataset):
             self.examples = []
             with open(file_path, encoding="utf-8") as f:
                 text = f.read()
-
+            # print(text[:100])
+            # exit()
             tokenized_text = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
-
+            # print(tokenized_text[:100])
             for i in range(0, len(tokenized_text) - block_size + 1, block_size):  # Truncate in block of block_size
                 self.examples.append(tokenizer.build_inputs_with_special_tokens(tokenized_text[i : i + block_size]))
             # Note that we are loosing the last truncated example here for the sake of simplicity (no padding)
@@ -144,10 +145,35 @@ class LineByLineTextDataset(Dataset):
         return torch.tensor(self.examples[i], dtype=torch.long)
 
 
+class OneByOneTextDataset(Dataset):
+    def __init__(self, tokenizer: PreTrainedTokenizer, file_path: str, split_token='<EOD>', block_size=512):
+        assert os.path.isfile(file_path)
+        # Here, we do not cache the features, operating under the assumption
+        # that we will soon use fast multithreaded tokenizers from the
+        # `tokenizers` repo everywhere =)
+        logger.info("Creating features from dataset file at %s", file_path)
+
+        with open(file_path, encoding="utf-8") as f:
+            lines = [line for line in f.read().split(split_token) if (len(line) > 0 and not line.isspace())]
+        # add special tokens which shouldn't be split
+        special_tokens_dict = {'cls_token': '<TLDR>', 'eos_token': '<EOD>', 'additional_special_tokens': ['<EOT>']}
+        tokenizer.add_special_tokens(special_tokens_dict)
+
+        self.examples = tokenizer.batch_encode_plus(lines, add_special_tokens=True, max_length=block_size)["input_ids"]
+
+    def __len__(self):
+        return len(self.examples)
+
+    def __getitem__(self, i):
+        return torch.tensor(self.examples[i], dtype=torch.long)
+
+
 def load_and_cache_examples(args, tokenizer, evaluate=False):
     file_path = args.eval_data_file if evaluate else args.train_data_file
     if args.line_by_line:
         return LineByLineTextDataset(tokenizer, args, file_path=file_path, block_size=args.block_size)
+    elif args.one_by_one:
+        return OneByOneTextDataset(tokenizer, file_path=file_path, block_size=args.block_size)
     else:
         return TextDataset(tokenizer, args, file_path=file_path, block_size=args.block_size)
 
@@ -347,11 +373,20 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
                 continue
 
             inputs, labels = mask_tokens(batch, tokenizer, args) if args.mlm else (batch, batch)
+            model.resize_token_embeddings(len(tokenizer))
+
+            # print(inputs)
+            # print(inputs.shape)
+            # print("_"*100)
+            # print(labels)
+            # print(inputs.shape)
             inputs = inputs.to(args.device)
             labels = labels.to(args.device)
             model.train()
             outputs = model(inputs, masked_lm_labels=labels) if args.mlm else model(inputs, labels=labels)
             loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
+            # print(loss)
+            # exit()
 
             if args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average on multi-gpu parallel training
@@ -508,6 +543,11 @@ def main():
         "--line_by_line",
         action="store_true",
         help="Whether distinct lines of text in the dataset are to be handled as distinct sequences.",
+    )
+    parser.add_argument(
+        "--one_by_one",
+        action="store_true",
+        help="Split the input text on a special token and treat each sequence one by one.",
     )
     parser.add_argument(
         "--should_continue", action="store_true", help="Whether to continue from latest checkpoint in output_dir"
