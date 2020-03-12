@@ -834,11 +834,11 @@ def main():
 
     # Saving best-practices: if you use save_pretrained for the model and tokenizer, you can reload them using from_pretrained()
     if args.do_train and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
+
+        args.output_dir = os.path.join(args.output_dir, 'final')
         # Create output directory if needed
         if args.local_rank in [-1, 0]:
             os.makedirs(args.output_dir, exist_ok=True)
-
-        args.output_dir = os.path.join(args.output_dir, 'final')
 
         logger.info("Saving model checkpoint to %s", args.output_dir)
         # Save a trained model, configuration and tokenizer using `save_pretrained()`.
