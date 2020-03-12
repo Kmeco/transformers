@@ -205,7 +205,8 @@ def main():
     model.to(args.device)
 
     args.length = adjust_length_to_model(args.length, max_sequence_length=model.config.max_position_embeddings)
-    logger.info(args)
+
+    # logger.info(args)
 
     prompt_text = args.prompt if args.prompt else input("Model prompt >>> ")
 

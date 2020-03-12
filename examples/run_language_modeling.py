@@ -222,7 +222,7 @@ def _sorted_checkpoints(args, checkpoint_prefix="checkpoint", use_mtime=False) -
 def _rotate_checkpoints(args, checkpoint_prefix="checkpoint", use_mtime=False) -> None:
     if not args.save_total_limit:
         return
-    if args.save_total_limit <= 0:
+    if args.save_total_limit <= 1:
         return
 
     # Check if we should delete older checkpoint(s)
@@ -290,13 +290,6 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
     train_dataloader = DataLoader(
         train_dataset, sampler=train_sampler, batch_size=args.train_batch_size, collate_fn=collate
     )
-
-    # for batch in train_dataloader:
-    #     print(batch[0].shape)
-    #     ex, label = batch
-    #     print(ex)
-    #     print(label)
-    #     exit()
 
     if args.max_steps > 0:
         t_total = args.max_steps
@@ -384,7 +377,7 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
     model_to_resize.resize_token_embeddings(len(tokenizer))
 
     if args.wandb:
-        wandb.init(project="ucl-nlp-project", reinit=True)
+        wandb.init(project=args.wandb, reinit=True)
         wandb.watch(model)
 
     model.zero_grad()
@@ -457,7 +450,10 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
                 if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
                     checkpoint_prefix = "checkpoint"
                     # Save model checkpoint
-                    output_dir = os.path.join(args.output_dir, "{}-{}".format(checkpoint_prefix, global_step))
+                    dir_suffix = 'latest' if args.save_total_limit == 1 else global_step
+
+                    output_dir = os.path.join(args.output_dir, "{}-{}".format(checkpoint_prefix, dir_suffix))
+
                     os.makedirs(output_dir, exist_ok=True)
                     model_to_save = (
                         model.module if hasattr(model, "module") else model
@@ -468,7 +464,7 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
                     torch.save(args, os.path.join(output_dir, "training_args.bin"))
                     logger.info("Saving model checkpoint to %s", output_dir)
 
-                    _rotate_checkpoints(args, checkpoint_prefix)
+                    _rotate_checkpoints(args, checkpoint_prefix)  # delete old checkpoints
 
                     torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
                     torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
@@ -706,7 +702,7 @@ def main():
     parser.add_argument("--local_rank", type=int, default=-1, help="For distributed training: local_rank")
     parser.add_argument("--server_ip", type=str, default="", help="For distant debugging.")
     parser.add_argument("--server_port", type=str, default="", help="For distant debugging.")
-    parser.add_argument("--wandb", action="store_true", help="Track data to wandb.")
+    parser.add_argument("--wandb", default=None, type=str, help="Track data to wandb - pass in project name.")
     args = parser.parse_args()
 
     if args.model_type in ["bert", "roberta", "distilbert", "camembert"] and not args.mlm:
@@ -841,6 +837,8 @@ def main():
         # Create output directory if needed
         if args.local_rank in [-1, 0]:
             os.makedirs(args.output_dir, exist_ok=True)
+
+        args.output_dir = os.path.join(args.output_dir, 'final')
 
         logger.info("Saving model checkpoint to %s", args.output_dir)
         # Save a trained model, configuration and tokenizer using `save_pretrained()`.
