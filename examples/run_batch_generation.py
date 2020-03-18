@@ -195,12 +195,8 @@ def main():
     # Note that DistributedSampler samples randomly
 
     def collate(examples):
-        if args.one_by_one:
-            xs, ys = list(zip(*examples))
-            return pad_sequence(xs, batch_first=True), pad_sequence(ys, batch_first=True)
-        elif tokenizer._pad_token is None:
-            return pad_sequence(examples, batch_first=True)
-        return pad_sequence(examples, batch_first=True, padding_value=tokenizer.pad_token_id)
+        xs, ys = list(zip(*examples))
+        return pad_sequence(xs, batch_first=True), pad_sequence(ys, batch_first=True)
 
     eval_sampler = SequentialSampler(eval_dataset)
     eval_dataloader = DataLoader(
