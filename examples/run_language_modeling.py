@@ -156,7 +156,7 @@ class OneByOneTextDataset(Dataset):
         with open(file_path, encoding="utf-8") as f:
             lines = [line + split_token for line in f.read().split(split_token) if (len(line) > 0 and not line.isspace())]
         # add special tokens which shouldn't be split
-        special_tokens_dict = {'cls_token': '<TLDR>', 'eos_token': '<EOD>', 'additional_special_tokens': ['<EOT>']}
+        special_tokens_dict = {'cls_token': '<TLDR>', 'eos_token': '<EOD>'} #, 'additional_special_tokens': ['<EOT>']}
         tokenizer.add_special_tokens(special_tokens_dict)
 
         self.examples = tokenizer.batch_encode_plus(lines, add_special_tokens=True, max_length=block_size)["input_ids"]
@@ -486,7 +486,7 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
     return global_step, tr_loss / global_step
 
 
-def evaluate(args, model: PreTrainedModel, tokenizer: PreTrainedTokenizer, message='default', prefix="") -> Dict:
+def evaluate(args, model: PreTrainedModel, tokenizer: PreTrainedTokenizer, prefix="defaul") -> Dict:
     # Loop to handle MNLI double evaluation (matched, mis-matched)
     eval_output_dir = args.output_dir
 
