@@ -236,7 +236,7 @@ def main():
 
             # Remove all text after the stop token
             text = text[: text.find(args.stop_token) if args.stop_token else None]
-            article = article[labels[idx].ne(-100)]
+            article = article[article.find(tokenizer.cls_token):]
 
             total_dict = {'abstract': article, 'output': text}
             generated_sequences.append(total_dict)
