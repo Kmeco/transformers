@@ -227,7 +227,7 @@ def main():
 
         generated_sequences = []
         for idx, generated_sequence in enumerate(output_sequences):
-            print("=== GENERATED SEQUENCE {} ===".format(idx + 1))
+            print("=== GENERATED SEQUENCE {}/{} ===".format(global_step, idx))
             generated_sequence = generated_sequence.tolist()
 
             # Decode text
@@ -241,7 +241,7 @@ def main():
             total_dict = {'abstract': article, 'output': text}
             generated_sequences.append(total_dict)
 
-        out_path = os.path.join(args.output_dir, "f_{}.json".format(idx))
+        out_path = os.path.join(args.output_dir, "f_{}.json".format(global_step))
         with open(out_path, 'w') as f:
             json.dump(generated_sequences, f)
 
