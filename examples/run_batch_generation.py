@@ -27,13 +27,13 @@ import numpy as np
 import torch
 from tqdm import tqdm
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import SequentialSampler
 
-from run_language_modeling import load_and_cache_examples
 from transformers import (
     GPT2LMHeadModel,
-    GPT2Tokenizer
+    GPT2Tokenizer,
+    PreTrainedTokenizer
 )
 
 
