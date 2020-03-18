@@ -140,6 +140,9 @@ def main():
              "The training dataset will be truncated in block of this size for training."
              "Default to the model max input length for single sentence inputs (take into account special tokens).",
     )
+    parser.add_argument(
+        "--per_gpu_eval_batch_size", default=4, type=int, help="Batch size per GPU/CPU for evaluation."
+    )
     parser.add_argument("--length", type=int, default=20)
     parser.add_argument("--stop_token", type=str, default=None, help="Token at which text generation is stopped")
 
@@ -233,11 +236,13 @@ def main():
 
             # Decode text
             text = tokenizer.decode(generated_sequence, clean_up_tokenization_spaces=True)
+            article = tokenizer.decode(inputs[idx], clean_up_tokenization_spaces=True)
 
             # Remove all text after the stop token
             text = text[: text.find(args.stop_token) if args.stop_token else None]
+            article = article[labels[idx].ne(-100)]
 
-            total_dict = {'abstract': labels[idx], 'output': text}
+            total_dict = {'abstract': article, 'output': text}
             generated_sequences.append(total_dict)
 
         out_path = os.path.join(args.output_dir, "f_{}.json".format(idx))
