@@ -185,8 +185,7 @@ def main():
 
     eval_dataset = OneByOneTextDataset(tokenizer, file_path=args.eval_data_file, block_size=args.block_size)
 
-    if args.local_rank in [-1, 0]:
-        os.makedirs(args.output_dir, exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
 
     args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
 
