@@ -30,7 +30,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SequentialSampler
 
-from examples.run_language_modeling import load_and_cache_examples
+from run_language_modeling import load_and_cache_examples
 from transformers import (
     GPT2LMHeadModel,
     GPT2Tokenizer
@@ -66,6 +66,44 @@ def adjust_length_to_model(length, max_sequence_length):
     return length
 
 
+class OneByOneTextDataset(Dataset):
+    def __init__(self, tokenizer: PreTrainedTokenizer, file_path: str, split_token='<EOD>', block_size=512):
+        assert os.path.isfile(file_path)
+        # Here, we do not cache the features, operating under the assumption
+        # that we will soon use fast multithreaded tokenizers from the
+        # `tokenizers` repo everywhere =)
+        logger.info("Creating features from dataset file at %s", file_path)
+
+        with open(file_path, encoding="utf-8") as f:
+            lines = [line + split_token for line in f.read().split(split_token) if (len(line) > 0 and not line.isspace())]
+        # add special tokens which shouldn't be split
+        special_tokens_dict = {'cls_token': '<TLDR>', 'eos_token': '<EOD>'} #, 'additional_special_tokens': ['<EOT>']}
+        tokenizer.add_special_tokens(special_tokens_dict)
+
+        self.examples = tokenizer.batch_encode_plus(lines, add_special_tokens=True, max_length=block_size)["input_ids"]
+        self.examples = [ex for ex in self.examples if tokenizer.encode('<TLDR>')[0] in ex]
+
+        self.labels = []
+        max_block = torch.arange(block_size)
+        for ex in self.examples:
+            # note that this will throw an exeption if token is not in the training example.
+            try:
+                idx = ex.index(tokenizer.encode('<TLDR>')[0])
+            except ValueError as e:
+                print("Example does not contain <TLDR> token.")
+                print(tokenizer.decode(ex))
+                exit()
+            mask = (max_block <= idx)[:len(ex)]
+            masked_labels = torch.tensor(ex) * ~mask - mask.type(torch.int) * 100  # ignore context when computing loss
+            self.labels.append(masked_labels)
+
+    def __len__(self):
+        return len(self.examples)
+
+    def __getitem__(self, i):
+        return torch.tensor(self.examples[i], dtype=torch.long), self.labels[i]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -93,6 +131,14 @@ def main():
         type=str,
         required=True,
         help="The output directory where the model predictions will be written.",
+    )
+    parser.add_argument(
+        "--block_size",
+        default=-1,
+        type=int,
+        help="Optional input sequence length after tokenization."
+             "The training dataset will be truncated in block of this size for training."
+             "Default to the model max input length for single sentence inputs (take into account special tokens).",
     )
     parser.add_argument("--length", type=int, default=20)
     parser.add_argument("--stop_token", type=str, default=None, help="Token at which text generation is stopped")
@@ -137,12 +183,10 @@ def main():
 
     # logger.info(args)
 
-    eval_output_dir = args.output_dir
-
-    eval_dataset = load_and_cache_examples(args, tokenizer, evaluate=True)
+    eval_dataset = OneByOneTextDataset(tokenizer, file_path=args.eval_data_file, block_size=args.block_size)
 
     if args.local_rank in [-1, 0]:
-        os.makedirs(eval_output_dir, exist_ok=True)
+        os.makedirs(args.output_dir, exist_ok=True)
 
     args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
 
