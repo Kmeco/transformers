@@ -220,7 +220,7 @@ def main():
         inputs = torch.tensor(inputs).to(args.device)
 
         output_sequence = model.generate(
-            input_ids=inputs,
+            input_ids=inputs.unsqueeze(0),
             max_length=args.length + len(inputs),
             temperature=args.temperature,
             top_k=args.k,
