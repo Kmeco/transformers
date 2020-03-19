@@ -212,11 +212,12 @@ def main():
 
     global_step = 0
     for example in tqdm(eval_dataset, desc="Evaluating"):
-        inputs = tokenizer.encode_plus(example['article'] + ' <TLDR>', add_special_tokens=True,
-                                       max_length=args.block_size)["input_ids"]
+        inputs = tokenizer.encode(" ".join(example['article']) + ' <TLDR>', add_special_tokens=True)["input_ids"]
+
+        if len(inputs) > args.block_size:
+            continue
 
         inputs = inputs.to(args.device)
-        # labels = labels.to(args.device)
 
         output_sequence = model.generate(
             input_ids=inputs,
