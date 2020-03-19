@@ -231,14 +231,14 @@ def main():
         )
 
         # Remove the batch dimension when returning multiple sequences
-        if len(output_sequence.shape) > 2:
-            output_sequence.squeeze_()
+        output_sequence.squeeze_()
 
         # Decode text
         text = tokenizer.decode(output_sequence, clean_up_tokenization_spaces=True)
 
         # Remove all text after the stop token
         text = text[: text.find(args.stop_token) if args.stop_token else None]
+        text = text[text.find(tokenizer.cls_token) :]
 
         total_dict = {'abstract': example['abstract'], 'output': text}
 
