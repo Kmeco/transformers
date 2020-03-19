@@ -22,6 +22,7 @@ import argparse
 import json
 import logging
 import os
+from glob import glob
 
 import numpy as np
 import torch
@@ -66,7 +67,7 @@ def adjust_length_to_model(length, max_sequence_length):
     return length
 
 
-class OneByOneTextDataset(Dataset):
+class LoadDataset(Dataset):
     def __init__(self, tokenizer: PreTrainedTokenizer, file_path: str, split_token='<EOD>', block_size=512):
         assert os.path.isfile(file_path)
         # Here, we do not cache the features, operating under the assumption
@@ -188,29 +189,41 @@ def main():
 
     eval_dataset = OneByOneTextDataset(tokenizer, file_path=args.eval_data_file, block_size=args.block_size)
 
+    eval_dataset = []
+    for f_name in glob('pass_forward/*.json'):
+        with open(f_name) as f:
+            line = json.load(f)
+            eval_dataset.append(line)
+
+    special_tokens_dict = {'cls_token': '<TLDR>', 'eos_token': '<EOD>'}  # , 'additional_special_tokens': ['<EOT>']}
+    tokenizer.add_special_tokens(special_tokens_dict)
+
+    inputs = tokenizer.batch_encode_plus(eval_dataset, add_special_tokens=True, max_length=block_size)["input_ids"]
+    inputs = [ex for ex in inputs if tokenizer.encode('<TLDR>')[0] in ex]
+
+    # args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
+    #
+    # # Note that DistributedSampler samples randomly
+    #
+    # def collate(examples):
+    #     xs, ys = list(zip(*examples))
+    #     return pad_sequence(xs, batch_first=True), pad_sequence(ys, batch_first=True)
+    #
+    # eval_sampler = SequentialSampler(eval_dataset)
+    # eval_dataloader = DataLoader(
+    #     eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size, collate_fn=collate
+    # )
     os.makedirs(args.output_dir, exist_ok=True)
 
-    args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
-
-    # Note that DistributedSampler samples randomly
-
-    def collate(examples):
-        xs, ys = list(zip(*examples))
-        return pad_sequence(xs, batch_first=True), pad_sequence(ys, batch_first=True)
-
-    eval_sampler = SequentialSampler(eval_dataset)
-    eval_dataloader = DataLoader(
-        eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size, collate_fn=collate
-    )
-
     global_step = 0
-    for batch in tqdm(eval_dataloader, desc="Evaluating"):
-        inputs, labels = batch
+    for example in tqdm(eval_dataset, desc="Evaluating"):
+        inputs = tokenizer.encode_plus(example['article'] + ' <TLDR>', add_special_tokens=True,
+                                       max_length=args.block_size)["input_ids"]
 
         inputs = inputs.to(args.device)
         # labels = labels.to(args.device)
 
-        output_sequences = model.generate(
+        output_sequence = model.generate(
             input_ids=inputs,
             max_length=args.length + len(inputs[0]),
             temperature=args.temperature,
@@ -222,28 +235,20 @@ def main():
         )
 
         # Remove the batch dimension when returning multiple sequences
-        if len(output_sequences.shape) > 2:
-            output_sequences.squeeze_()
+        if len(output_sequence.shape) > 2:
+            output_sequence.squeeze_()
 
-        generated_sequences = []
-        for idx, generated_sequence in enumerate(output_sequences):
-            print("=== GENERATED SEQUENCE {}/{} ===".format(global_step, idx))
-            generated_sequence = generated_sequence.tolist()
+        # Decode text
+        text = tokenizer.decode(output_sequence, clean_up_tokenization_spaces=True)
 
-            # Decode text
-            text = tokenizer.decode(generated_sequence, clean_up_tokenization_spaces=True)
-            article = tokenizer.decode(inputs[idx], clean_up_tokenization_spaces=True)
+        # Remove all text after the stop token
+        text = text[: text.find(args.stop_token) if args.stop_token else None]
 
-            # Remove all text after the stop token
-            text = text[: text.find(args.stop_token) if args.stop_token else None]
-            article = article[article.find(tokenizer.cls_token):]
-
-            total_dict = {'abstract': article, 'output': text}
-            generated_sequences.append(total_dict)
+        total_dict = {'abstract': example['abstract'], 'output': text}
 
         out_path = os.path.join(args.output_dir, "f_{}.json".format(global_step))
         with open(out_path, 'w') as f:
-            json.dump(generated_sequences, f)
+            json.dump(total_dict, f)
 
         global_step += 1
 
