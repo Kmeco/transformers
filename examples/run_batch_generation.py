@@ -240,7 +240,7 @@ def main():
         text = text[: text.find(args.stop_token) if args.stop_token else None]
         text = text[text.find(tokenizer.cls_token) :]
 
-        total_dict = {'abstract': example['abstract'], 'output': text}
+        total_dict = {'abstract': " ".join(example['abstract']), 'output': text}
 
         out_path = os.path.join(args.output_dir, "f_{}.json".format(global_step))
         with open(out_path, 'w') as f:
