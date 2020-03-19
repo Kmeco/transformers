@@ -212,7 +212,7 @@ def main():
 
     global_step = 0
     for example in tqdm(eval_dataset, desc="Evaluating"):
-        inputs = tokenizer.encode(" ".join(example['article']) + ' <TLDR>', add_special_tokens=True)["input_ids"]
+        inputs = tokenizer.encode(" ".join(example['article']) + ' <TLDR>', add_special_tokens=True)
 
         if len(inputs) > args.block_size:
             continue
