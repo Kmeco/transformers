@@ -221,7 +221,7 @@ def main():
 
         output_sequence = model.generate(
             input_ids=inputs,
-            max_length=args.length + len(inputs[0]),
+            max_length=args.length + len(inputs),
             temperature=args.temperature,
             top_k=args.k,
             top_p=args.p,
