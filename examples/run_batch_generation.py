@@ -185,21 +185,16 @@ def main():
 
     args.length = adjust_length_to_model(args.length, max_sequence_length=model.config.max_position_embeddings)
 
-    # logger.info(args)
-
-    eval_dataset = OneByOneTextDataset(tokenizer, file_path=args.eval_data_file, block_size=args.block_size)
-
+    # load all json files in the data directory
+    data_path = os.path.join(args.eval_data_file, "*.json")
     eval_dataset = []
-    for f_name in glob('pass_forward/*.json'):
+    for f_name in glob(data_path):
         with open(f_name) as f:
             line = json.load(f)
             eval_dataset.append(line)
 
     special_tokens_dict = {'cls_token': '<TLDR>', 'eos_token': '<EOD>'}  # , 'additional_special_tokens': ['<EOT>']}
     tokenizer.add_special_tokens(special_tokens_dict)
-
-    inputs = tokenizer.batch_encode_plus(eval_dataset, add_special_tokens=True, max_length=block_size)["input_ids"]
-    inputs = [ex for ex in inputs if tokenizer.encode('<TLDR>')[0] in ex]
 
     # args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
     #
