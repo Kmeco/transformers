@@ -217,7 +217,7 @@ def main():
         if len(inputs) > args.block_size:
             continue
 
-        inputs = inputs.to(args.device)
+        inputs = torch.tensor(inputs).to(args.device)
 
         output_sequence = model.generate(
             input_ids=inputs,
