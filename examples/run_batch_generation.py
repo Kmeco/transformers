@@ -193,8 +193,8 @@ def main():
             line = json.load(f)
             eval_dataset.append(line)
 
-    special_tokens_dict = {'cls_token': '<TLDR>', 'eos_token': '<EOD>'}  # , 'additional_special_tokens': ['<EOT>']}
-    tokenizer.add_special_tokens(special_tokens_dict)
+    inputs = [" ".join(example['article']) + ' <TLDR>' for example in eval_dataset]
+    inputs = tokenizer.batch_encode_plus(inputs)['input_ids']
 
     # args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
     #
@@ -211,42 +211,57 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
 
     global_step = 0
-    for example in tqdm(eval_dataset, desc="Evaluating"):
-        inputs = tokenizer.encode(" ".join(example['article']) + ' <TLDR>', add_special_tokens=True)
-
-        if len(inputs) > args.block_size:
+    for example in tqdm(inputs, desc="Evaluating"):
+        if len(example) > args.block_size:
+            global_step += 1
             continue
 
-        inputs = torch.tensor(inputs).to(args.device)
+        ex = torch.tensor(example).to(args.device)
 
         output_sequence = model.generate(
-            input_ids=inputs.unsqueeze(0),
+            input_ids=ex.unsqueeze(0),
             max_length=args.length + len(inputs),
             temperature=args.temperature,
             top_k=args.k,
             top_p=args.p,
             repetition_penalty=args.repetition_penalty,
-            do_sample=True,
+            do_sample=False,
             num_return_sequences=args.num_return_sequences,
         )
 
         # Remove the batch dimension when returning multiple sequences
         output_sequence.squeeze_()
 
+        eval_dataset[global_step]['output'] = output_sequence.squeeze_()
+
         # Decode text
         text = tokenizer.decode(output_sequence, clean_up_tokenization_spaces=True)
 
         # Remove all text after the stop token
         text = text[: text.find(args.stop_token) if args.stop_token else None]
-        text = text[text.find(tokenizer.cls_token) :]
+        text = text[text.find(tokenizer.cls_token)+1 :]
 
-        total_dict = {'abstract': " ".join(example['abstract']), 'output': text}
+        eval_dataset[global_step]['output'] = text
+        global_step += 1
 
-        out_path = os.path.join(args.output_dir, "f_{}.json".format(global_step))
+    print("FINISHED EVALUATION...")
+
+    for i, example in enumerate(eval_dataset):
+        output = example.get('output')
+        if output is None:
+            continue
+
+        text = tokenizer.decode(output, clean_up_tokenization_spaces=True)
+        text = text[: text.find(args.stop_token) if args.stop_token else None]
+        text = text[text.find(tokenizer.cls_token) + 1:]
+
+        total_dict = {'abstract': " ".join(example['abstract']),
+                      'article': " ".join(example['article']),
+                      'output': text}
+
+        out_path = os.path.join(args.output_dir, "f_{}.json".format(i))
         with open(out_path, 'w') as f:
             json.dump(total_dict, f)
-
-        global_step += 1
 
 
 if __name__ == "__main__":
