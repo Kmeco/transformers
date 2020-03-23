@@ -359,10 +359,14 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
     if args.model_name_or_path and os.path.exists(args.model_name_or_path):
         try:
             # set global_step to gobal_step of last saved checkpoint from model path
-            checkpoint_suffix = args.model_name_or_path.split("-")[-1].split("/")[0]
-            global_step = int(checkpoint_suffix)
-            epochs_trained = global_step // (len(train_dataloader) // args.gradient_accumulation_steps)
-            steps_trained_in_current_epoch = global_step % (len(train_dataloader) // args.gradient_accumulation_steps)
+            # checkpoint_suffix = args.model_name_or_path.split("-")[-1].split("/")[0]
+            steps_file = os.path.join(args.model_name_or_path, "saved_steps.txt")
+            with open(steps_file, "r") as reader:
+                lines = reader.readlines()
+                global_step = int(lines[-1])
+            # global_step = int(checkpoint_suffix)
+            epochs_trained = global_step // (len(train_dataloader))
+            steps_trained_in_current_epoch = global_step % (len(train_dataloader))
 
             logger.info("  Continuing training from checkpoint, will skip to saved global_step")
             logger.info("  Continuing training from epoch %d", epochs_trained)
@@ -424,6 +428,7 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
             else:
                 loss.backward()
 
+            global_step += 1
             tr_loss += loss.item()
             if (step + 1) % args.gradient_accumulation_steps == 0:
                 if args.fp16:
@@ -433,7 +438,8 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
                 optimizer.step()
                 scheduler.step()  # Update learning rate schedule
                 model.zero_grad()
-                global_step += 1
+
+                # global_step += 1
 
                 if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0:
                     # Log metrics
@@ -472,6 +478,11 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
                     torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
                     torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
                     logger.info("Saving optimizer and scheduler states to %s", output_dir)
+
+                    output_save_file = os.path.join(args.output_dir, "saved_steps.txt")
+                    with open(output_save_file, "a") as writer:
+                        writer.write("%s\n".format(global_step))
+
 
             if args.max_steps > 0 and global_step > args.max_steps:
                 epoch_iterator.close()

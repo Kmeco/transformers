@@ -234,14 +234,14 @@ def main():
 
         eval_dataset[global_step]['output'] = output_sequence.squeeze_()
 
-        # Decode text
-        text = tokenizer.decode(output_sequence, clean_up_tokenization_spaces=True)
-
-        # Remove all text after the stop token
-        text = text[: text.find(args.stop_token) if args.stop_token else None]
-        text = text[text.find(tokenizer.cls_token)+1 :]
-
-        eval_dataset[global_step]['output'] = text
+        # # Decode text
+        # text = tokenizer.decode(output_sequence, clean_up_tokenization_spaces=True)
+        #
+        # # Remove all text after the stop token
+        # text = text[: text.find(args.stop_token) if args.stop_token else None]
+        # text = text[text.find(tokenizer.cls_token)+1 :]
+        #
+        # eval_dataset[global_step]['output'] = text
         global_step += 1
 
     print("FINISHED EVALUATION...")
