@@ -223,7 +223,7 @@ def main():
     for i, example in enumerate(outputs):
         text = tokenizer.decode(example, clean_up_tokenization_spaces=True)
         text = text[: text.find(args.stop_token) if args.stop_token else None]
-        text = text[text.find(tokenizer.cls_token) + 1:]
+        text = text[text.find(tokenizer.cls_token) + len(tokenizer.cls_token):]
 
         total_dict = {'abstract': " ".join(eval_dataset.get_summary(i)),
                       'article': " ".join(eval_dataset.get_raw_article(i)),
