@@ -481,8 +481,7 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
 
                     output_save_file = os.path.join(args.output_dir, "saved_steps.txt")
                     with open(output_save_file, "a") as writer:
-                        writer.write("%s\n".format(global_step))
-
+                        writer.write("{}\n".format(global_step))
 
             if args.max_steps > 0 and global_step > args.max_steps:
                 epoch_iterator.close()

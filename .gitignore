@@ -147,3 +147,5 @@ debug.env
 tags
 
 examples/wandb
+
+.DS_Store

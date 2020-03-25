@@ -68,41 +68,38 @@ def adjust_length_to_model(length, max_sequence_length):
 
 
 class LoadDataset(Dataset):
-    def __init__(self, tokenizer: PreTrainedTokenizer, file_path: str, split_token='<EOD>', block_size=512):
-        assert os.path.isfile(file_path)
-        # Here, we do not cache the features, operating under the assumption
-        # that we will soon use fast multithreaded tokenizers from the
-        # `tokenizers` repo everywhere =)
-        logger.info("Creating features from dataset file at %s", file_path)
+    def __init__(self, tokenizer: PreTrainedTokenizer, file_path: str, block_size=512):
+        assert os.path.isdir(file_path)
 
-        with open(file_path, encoding="utf-8") as f:
-            lines = [line + split_token for line in f.read().split(split_token) if (len(line) > 0 and not line.isspace())]
         # add special tokens which shouldn't be split
         special_tokens_dict = {'cls_token': '<TLDR>', 'eos_token': '<EOD>'} #, 'additional_special_tokens': ['<EOT>']}
         tokenizer.add_special_tokens(special_tokens_dict)
 
-        self.examples = tokenizer.batch_encode_plus(lines, add_special_tokens=True, max_length=block_size)["input_ids"]
-        self.examples = [ex for ex in self.examples if tokenizer.encode('<TLDR>')[0] in ex]
+        self.examples = []
+        # load all json files in the data directory
+        data_path = os.path.join(file_path, "*.json")
+        self.inputs =[]
+        for f_name in glob(data_path):
+            with open(f_name) as f:
+                line = json.load(f)
+                tokenized = tokenizer.encode(" ".join(line['article']) + ' <TLDR> ')
+                if len(tokenized) <= block_size:
+                    self.examples.append(line)
+                    self.inputs.append(tokenized)
 
-        self.labels = []
-        max_block = torch.arange(block_size)
-        for ex in self.examples:
-            # note that this will throw an exeption if token is not in the training example.
-            try:
-                idx = ex.index(tokenizer.encode('<TLDR>')[0])
-            except ValueError as e:
-                print("Example does not contain <TLDR> token.")
-                print(tokenizer.decode(ex))
-                exit()
-            mask = (max_block <= idx)[:len(ex)]
-            masked_labels = torch.tensor(ex) * ~mask - mask.type(torch.int) * 100  # ignore context when computing loss
-            self.labels.append(masked_labels)
+        # self.inputs = tokenizer.batch_encode_plus(self.inputs)['input_ids']
 
     def __len__(self):
         return len(self.examples)
 
     def __getitem__(self, i):
-        return torch.tensor(self.examples[i], dtype=torch.long), self.labels[i]
+        return torch.tensor(self.inputs[i], dtype=torch.long)
+
+    def get_summary(self, i):
+        return self.examples[i]['abstract']
+
+    def get_raw_article(self, i):
+        return self.examples[i]['article']
 
 
 def main():
@@ -180,47 +177,39 @@ def main():
         raise KeyError("the model {} you specified is not supported. You are welcome to add it and open a PR :)")
 
     tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path)
+
+
+    # load all json files in the data directory
+    eval_dataset = LoadDataset(tokenizer, args.eval_data_file, args.block_size)
+
+    args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
+
+    def collate(examples):
+        return pad_sequence(examples, batch_first=True)
+
+    eval_sampler = SequentialSampler(eval_dataset)
+    eval_dataloader = DataLoader(
+        eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size, collate_fn=collate
+    )
+
     model = model_class.from_pretrained(args.model_name_or_path)
+
     model.to(args.device)
+    model.resize_token_embeddings(len(tokenizer))
 
     args.length = adjust_length_to_model(args.length, max_sequence_length=model.config.max_position_embeddings)
 
-    # load all json files in the data directory
-    data_path = os.path.join(args.eval_data_file, "*.json")
-    eval_dataset = []
-    for f_name in glob(data_path):
-        with open(f_name) as f:
-            line = json.load(f)
-            eval_dataset.append(line)
-
-    inputs = [" ".join(example['article']) + ' <TLDR>' for example in eval_dataset]
-    inputs = tokenizer.batch_encode_plus(inputs)['input_ids']
-
-    # args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
-    #
-    # # Note that DistributedSampler samples randomly
-    #
-    # def collate(examples):
-    #     xs, ys = list(zip(*examples))
-    #     return pad_sequence(xs, batch_first=True), pad_sequence(ys, batch_first=True)
-    #
-    # eval_sampler = SequentialSampler(eval_dataset)
-    # eval_dataloader = DataLoader(
-    #     eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size, collate_fn=collate
-    # )
     os.makedirs(args.output_dir, exist_ok=True)
 
-    global_step = 0
-    for example in tqdm(inputs, desc="Evaluating"):
-        if len(example) > args.block_size:
-            global_step += 1
-            continue
+    outputs = []
+    iterator = tqdm(eval_dataloader, desc="Evaluating")
+    for step, batch in enumerate(iterator):
 
-        ex = torch.tensor(example).to(args.device)
+        batch = batch.to(args.device)
 
         output_sequence = model.generate(
-            input_ids=ex.unsqueeze(0),
-            max_length=args.length + len(inputs),
+            input_ids=batch,
+            max_length=args.length + len(batch[0]),
             temperature=args.temperature,
             top_k=args.k,
             top_p=args.p,
@@ -229,37 +218,21 @@ def main():
             num_return_sequences=args.num_return_sequences,
         )
 
-        # Remove the batch dimension when returning multiple sequences
-        output_sequence.squeeze_()
-
-        eval_dataset[global_step]['output'] = output_sequence.squeeze_()
-
-        # # Decode text
-        # text = tokenizer.decode(output_sequence, clean_up_tokenization_spaces=True)
-        #
-        # # Remove all text after the stop token
-        # text = text[: text.find(args.stop_token) if args.stop_token else None]
-        # text = text[text.find(tokenizer.cls_token)+1 :]
-        #
-        # eval_dataset[global_step]['output'] = text
-        global_step += 1
+        outputs += output_sequence.tolist()
 
     print("FINISHED EVALUATION...")
 
-    for i, example in enumerate(eval_dataset):
-        output = example.get('output')
-        if output is None:
-            continue
-
-        text = tokenizer.decode(output, clean_up_tokenization_spaces=True)
+    for i, example in enumerate(outputs):
+        text = tokenizer.decode(example, clean_up_tokenization_spaces=True)
         text = text[: text.find(args.stop_token) if args.stop_token else None]
         text = text[text.find(tokenizer.cls_token) + 1:]
 
-        total_dict = {'abstract': " ".join(example['abstract']),
-                      'article': " ".join(example['article']),
+        total_dict = {'abstract': " ".join(eval_dataset.get_summary(i)),
+                      'article': " ".join(eval_dataset.get_raw_article(i)),
                       'output': text}
 
         out_path = os.path.join(args.output_dir, "f_{}.json".format(i))
+
         with open(out_path, 'w') as f:
             json.dump(total_dict, f)
 
