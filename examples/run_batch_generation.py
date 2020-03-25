@@ -72,8 +72,8 @@ class LoadDataset(Dataset):
         assert os.path.isdir(file_path)
 
         # add special tokens which shouldn't be split
-        special_tokens_dict = {'cls_token': '<TLDR>', 'eos_token': '<EOD>'} #, 'additional_special_tokens': ['<EOT>']}
-        tokenizer.add_special_tokens(special_tokens_dict)
+        # special_tokens_dict = {'cls_token': '<TLDR>', 'eos_token': '<EOD>'} #, 'additional_special_tokens': ['<EOT>']}
+        # tokenizer.add_special_tokens(special_tokens_dict)
 
         self.examples = []
         # load all json files in the data directory
@@ -86,8 +86,6 @@ class LoadDataset(Dataset):
                 if len(tokenized) <= block_size:
                     self.examples.append(line)
                     self.inputs.append(tokenized)
-
-        # self.inputs = tokenizer.batch_encode_plus(self.inputs)['input_ids']
 
     def __len__(self):
         return len(self.examples)
