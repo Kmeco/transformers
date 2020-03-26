@@ -84,6 +84,7 @@ class LoadDataset(Dataset):
                 line = json.load(f)
                 tokenized = tokenizer.encode(" ".join(line['article']) + ' <TLDR> ')
                 if len(tokenized) <= block_size:
+                    line['id'] = f_name.split('/')[-1]
                     self.examples.append(line)
                     self.inputs.append(tokenized)
 
@@ -98,6 +99,9 @@ class LoadDataset(Dataset):
 
     def get_raw_article(self, i):
         return self.examples[i]['article']
+
+    def get_id(self, i):
+        return self.examples[i]['id']
 
 
 def main():
@@ -197,8 +201,6 @@ def main():
 
     args.length = adjust_length_to_model(args.length, max_sequence_length=model.config.max_position_embeddings)
 
-    os.makedirs(args.output_dir, exist_ok=True)
-
     outputs = []
     iterator = tqdm(eval_dataloader, desc="Evaluating")
     for step, batch in enumerate(iterator):
@@ -219,8 +221,9 @@ def main():
         outputs += output_sequence.tolist()
 
     print("FINISHED EVALUATION...")
-
     for i, example in enumerate(outputs):
+        os.makedirs(args.output_dir, exist_ok=True)
+
         text = tokenizer.decode(example, clean_up_tokenization_spaces=True)
         text = text[: text.find(args.stop_token) if args.stop_token else None]
         text = text[text.find(tokenizer.cls_token) + len(tokenizer.cls_token):]
@@ -229,7 +232,7 @@ def main():
                       'article': " ".join(eval_dataset.get_raw_article(i)),
                       'output': text}
 
-        out_path = os.path.join(args.output_dir, "f_{}.json".format(i))
+        out_path = os.path.join(args.output_dir, eval_dataset.get_id(i))
 
         with open(out_path, 'w') as f:
             json.dump(total_dict, f)
