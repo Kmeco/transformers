@@ -68,26 +68,35 @@ def adjust_length_to_model(length, max_sequence_length):
 
 
 class LoadDataset(Dataset):
-    def __init__(self, tokenizer: PreTrainedTokenizer, file_path: str, block_size=512):
-        assert os.path.isdir(file_path)
+    def __init__(self, tokenizer: PreTrainedTokenizer, args):
+        assert os.path.isdir(args.eval_data_file)
 
         # add special tokens which shouldn't be split
-        # special_tokens_dict = {'cls_token': '<TLDR>', 'eos_token': '<EOD>'} #, 'additional_special_tokens': ['<EOT>']}
-        # tokenizer.add_special_tokens(special_tokens_dict)
+        special_tokens_dict = {'cls_token': '<TLDR>', 'eos_token': '<EOD>'} #, 'additional_special_tokens': ['<EOT>']}
+        tokenizer.add_special_tokens(special_tokens_dict)
 
         self.examples = []
         # load all json files in the data directory
-        data_path = os.path.join(file_path, "*.json")
+        data_path = os.path.join(args.eval_data_file, "*.json")
+        precomputed = [f.split("/")[-1] for f in glob(os.path.join(args.output_dir, "*.json"))]
+        print(precomputed)
         self.inputs =[]
-        for f_name in glob(data_path):
-            with open(f_name) as f:
-                line = json.load(f)
-                article = " ".join(line['article']) if type(line['article']) is list else line['article']
-                tokenized = tokenizer.encode(article + ' <TLDR> ')
-                if len(tokenized) <= block_size:
-                    line['id'] = f_name.split('/')[-1]
-                    self.examples.append(line)
-                    self.inputs.append(tokenized)
+        skipped = 0
+        for f_path in glob(data_path):
+            f_name = f_path.split('/')[-1]
+            # print(f_name)
+            if f_name not in precomputed:
+                with open(f_path) as f:
+                    line = json.load(f)
+                    article = " ".join(line['article']) if type(line['article']) is list else line['article']
+                    tokenized = tokenizer.encode(article + ' <TLDR> ')
+                    if len(tokenized) <= args.block_size:
+                        line['id'] = f_name
+                        self.examples.append(line)
+                        self.inputs.append(tokenized)
+            else:
+                skipped += 1
+        print("Skipped {} files which have already been precomputed in the output_dir.".format(skipped))
 
     def __len__(self):
         return len(self.examples)
@@ -187,7 +196,7 @@ def main():
 
 
     # load all json files in the data directory
-    eval_dataset = LoadDataset(tokenizer, args.eval_data_file, args.block_size)
+    eval_dataset = LoadDataset(tokenizer, args)
 
     args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
 
@@ -206,9 +215,9 @@ def main():
 
     args.length = adjust_length_to_model(args.length, max_sequence_length=model.config.max_position_embeddings)
 
-    outputs = []
     iterator = tqdm(eval_dataloader, desc="Evaluating")
-    os.makedirs(args.output_dir, exist_ok=True)
+    if not os.path.isdir(args.output_dir):
+        os.makedirs(args.output_dir, exist_ok=True)
 
     for step, batch in enumerate(iterator):
 
