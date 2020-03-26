@@ -208,6 +208,8 @@ def main():
 
     outputs = []
     iterator = tqdm(eval_dataloader, desc="Evaluating")
+    os.makedirs(args.output_dir, exist_ok=True)
+
     for step, batch in enumerate(iterator):
 
         batch = batch.to(args.device)
@@ -223,24 +225,37 @@ def main():
             num_return_sequences=args.num_return_sequences,
         )
 
-        outputs += output_sequence.tolist()
-
-    print("FINISHED EVALUATION...")
-    for i, example in enumerate(outputs):
-        os.makedirs(args.output_dir, exist_ok=True)
+        example = output_sequence.squeeze_().tolist()
 
         text = tokenizer.decode(example, clean_up_tokenization_spaces=True)
         text = text[: text.find(args.stop_token) if args.stop_token else None]
         text = text[text.find(tokenizer.cls_token) + len(tokenizer.cls_token):]
 
-        total_dict = {'abstract': eval_dataset.get_summary(i),
-                      'article': eval_dataset.get_raw_article(i),
+        total_dict = {'abstract': eval_dataset.get_summary(step),
+                      'article': eval_dataset.get_raw_article(step),
                       'output': text}
 
-        out_path = os.path.join(args.output_dir, eval_dataset.get_id(i))
+        out_path = os.path.join(args.output_dir, eval_dataset.get_id(step))
 
         with open(out_path, 'w') as f:
             json.dump(total_dict, f)
+
+    # print("FINISHED EVALUATION...")
+    # for i, example in enumerate(outputs):
+    #     os.makedirs(args.output_dir, exist_ok=True)
+    #
+    #     text = tokenizer.decode(example, clean_up_tokenization_spaces=True)
+    #     text = text[: text.find(args.stop_token) if args.stop_token else None]
+    #     text = text[text.find(tokenizer.cls_token) + len(tokenizer.cls_token):]
+    #
+    #     total_dict = {'abstract': eval_dataset.get_summary(i),
+    #                   'article': eval_dataset.get_raw_article(i),
+    #                   'output': text}
+    #
+    #     out_path = os.path.join(args.output_dir, eval_dataset.get_id(i))
+    #
+    #     with open(out_path, 'w') as f:
+    #         json.dump(total_dict, f)
 
 
 if __name__ == "__main__":
