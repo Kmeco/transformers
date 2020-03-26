@@ -82,7 +82,8 @@ class LoadDataset(Dataset):
         for f_name in glob(data_path):
             with open(f_name) as f:
                 line = json.load(f)
-                tokenized = tokenizer.encode(" ".join(line['article']) + ' <TLDR> ')
+                article = " ".join(line['article']) if type(line['article']) is list else line['article']
+                tokenized = tokenizer.encode(article + ' <TLDR> ')
                 if len(tokenized) <= block_size:
                     line['id'] = f_name.split('/')[-1]
                     self.examples.append(line)
@@ -95,10 +96,14 @@ class LoadDataset(Dataset):
         return torch.tensor(self.inputs[i], dtype=torch.long)
 
     def get_summary(self, i):
-        return self.examples[i]['abstract']
+        line = self.examples[i]['abstract']
+        abstract = " ".join(line) if type(line) is list else line
+        return abstract
 
     def get_raw_article(self, i):
-        return self.examples[i]['article']
+        line = self.examples[i]['article']
+        article = " ".join(line) if type(line) is list else line
+        return article
 
     def get_id(self, i):
         return self.examples[i]['id']
@@ -228,8 +233,8 @@ def main():
         text = text[: text.find(args.stop_token) if args.stop_token else None]
         text = text[text.find(tokenizer.cls_token) + len(tokenizer.cls_token):]
 
-        total_dict = {'abstract': " ".join(eval_dataset.get_summary(i)),
-                      'article': " ".join(eval_dataset.get_raw_article(i)),
+        total_dict = {'abstract': eval_dataset.get_summary(i),
+                      'article': eval_dataset.get_raw_article(i),
                       'output': text}
 
         out_path = os.path.join(args.output_dir, eval_dataset.get_id(i))
