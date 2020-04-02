@@ -248,16 +248,15 @@ def main():
 
         # Remove all text after the stop token
         text = text[: text.find(args.stop_token) if args.stop_token else None]
-
+        abstract = text[len(tokenizer.decode(encoded_prompt[0], clean_up_tokenization_spaces=True)) :]
         # Add the prompt at the beginning of the sequence. Remove the excess text that was used for pre-processing
-        total_sequence = (
-            prompt_text + text[len(tokenizer.decode(encoded_prompt[0], clean_up_tokenization_spaces=True)) :]
-        )
+        total_sequence = (prompt_text + abstract)
 
         generated_sequences.append(total_sequence)
         print(total_sequence)
 
-    return generated_sequences
+        with ("tmp_out.txt", "w") as f:
+            f.write(abstract)
 
 
 if __name__ == "__main__":
