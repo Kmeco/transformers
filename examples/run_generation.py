@@ -255,7 +255,7 @@ def main():
         generated_sequences.append(total_sequence)
         print(total_sequence)
 
-        with ("tmp_out.txt", "w") as f:
+        with open("tmp_out.txt", "w") as f:
             f.write(abstract)
 
 
