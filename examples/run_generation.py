@@ -165,6 +165,7 @@ def main():
     )
 
     parser.add_argument("--prompt", type=str, default="")
+    parser.add_argument("--out_file", type=str, default="tmp_out.txt")
     parser.add_argument("--length", type=int, default=20)
     parser.add_argument("--stop_token", type=str, default=None, help="Token at which text generation is stopped")
 
@@ -255,7 +256,7 @@ def main():
         generated_sequences.append(total_sequence)
         print(total_sequence)
 
-        with open("tmp_out.txt", "w") as f:
+        with open(args.out_file, "w") as f:
             f.write(abstract)
 
 
