@@ -254,7 +254,8 @@ def main():
         total_sequence = (prompt_text + abstract)
 
         generated_sequences.append(total_sequence)
-        print(total_sequence)
+
+        print(abstract)
 
         with open(args.out_file, "w") as f:
             f.write(abstract)
